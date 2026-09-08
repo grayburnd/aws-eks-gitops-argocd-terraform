@@ -206,9 +206,6 @@ The Demo App uses Argo Rollouts for zero-downtime canary deployments
 | Reliability | Scale out all infra to multiple Availability Zones | Improves the availability of the application, making it resistent to disasters
 | Operational excellence | Implement alerting for key app SLOs | Helps align resource focus to key SLI's, such as P99 Latency and detect issues before they occur
 
-
-### Network Segmentation [W.I.P]
-
 ## Author
 
 Built as a production-grade DevOps portfolio project demonstrating:
