@@ -163,9 +163,9 @@ AWS Secrets Manager / SSM Parameter Store (source of truth)
 
 ---
 
-## Blue-Green Deployment (Argo Rollouts)
+## Canary Deployments (Argo Rollouts)
 
-The Demo App uses Argo Rollouts for zero-downtime canary deployments:
+The Demo App uses Argo Rollouts for zero-downtime canary deployments
 
 ---
 
