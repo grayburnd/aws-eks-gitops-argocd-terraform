@@ -1,4 +1,4 @@
-# AWS EKS GitOps Platform — Production-Grade Kubernetes on AWS
+# AWS EKS GitOps Platform - Demonstration-Grade Kubernetes on AWS
 
 > **A fully automated, Kubernetes platform on AWS EKS** built with Terraform, ArgoCD, and GitHub Actions, demonstrating DevSecOps, GitOps, observability, and advanced deployment patterns
 
