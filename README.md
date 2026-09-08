@@ -153,13 +153,13 @@ AWS Secrets Manager / SSM Parameter Store (source of truth)
 
 ---
 
-## Observability Stack [W.I.P]
+## Observability Stack
 
 **kube-prometheus-stack** (Prometheus + Grafana + Alertmanager):
 
 - **Metrics**: Cluster, node, pod, and application-level metrics
 - **Dashboards**: Pre-built + custom Grafana dashboards (Kubernetes cluster, Sock-Shop SLOs)
-- **Alerts**: Node not ready, pod crash-looping, high memory/CPU, HPA at max scale
+- **Alerts**: Configurable for a move to Production
 
 ---
 
