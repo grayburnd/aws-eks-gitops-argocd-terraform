@@ -130,6 +130,9 @@ flowchart TB
 | Helm | >= 4.2 | Chart deployments |
 
 ---
+
+## DevSecOps: Security Controls
+
 ### Secret Management (External Secrets Operator)
 
 ```
