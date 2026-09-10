@@ -5,10 +5,10 @@ This directory documents the GitOps repositories that describe the workloads and
 See the [root README](../README.md) for the platform architecture, prerequisites and repository-wide concerns.
 
 To go directly to each of the Teams GitOps repositories, click any of the links below:
-- [backend-gitops](https://github.com/YOUR_GITHUB_ORG/backend-gitops)
-- [frontend-gitops](https://github.com/YOUR_GITHUB_ORG/frontend-gitops)
-- [platform-gitops](https://github.com/YOUR_GITHUB_ORG/platform-gitops)
-- [data-gitops](https://github.com/YOUR_GITHUB_ORG/data-gitops)
+- [backend-gitops](https://github.com/grayburnd/backend-gitops)
+- [frontend-gitops](https://github.com/grayburnd/frontend-gitops)
+- [platform-gitops](https://github.com/grayburnd/platform-gitops)
+- [data-gitops](https://github.com/grayburnd/data-gitops)
 
 ## Architecture Overview
 ```mermaid

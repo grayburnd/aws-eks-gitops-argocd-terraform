@@ -25,9 +25,9 @@ All three application repositories extend the architecture and service pattern e
 The EKS deployment model, Terraform infrastructure, ArgoCD and GitOps integration, repository structure, CI/CD workflows and the application extensions in these repositories are this project's own work. Credit belongs to Docker Samples for the original example and the foundation it provided for this demonstration.
 
 To go directly to each of the App repositories, click any of the links below:
-- [vote-app](https://github.com/YOUR_GITHUB_ORG/vote-app)
-- [results-app](https://github.com/YOUR_GITHUB_ORG/results-app)
-- [worker-app](https://github.com/YOUR_GITHUB_ORG/worker-app)
+- [vote-app](https://github.com/grayburnd/vote-app)
+- [results-app](https://github.com/grayburnd/results-app)
+- [worker-app](https://github.com/grayburnd/worker-app)
 
 ## Application Delivery Architecture Overview
 ```mermaid

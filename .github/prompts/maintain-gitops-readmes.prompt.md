@@ -86,7 +86,7 @@ Assume every repository may be published publicly. Before finalizing any README:
 
 - Never publish AWS account IDs, account-specific ECR hosts, IAM ARNs, private role names, state bucket names, state keys or private endpoints.
 - Replace environment-specific values with clear placeholders such as `${AWS_ACCOUNT_ID}`, `${AWS_REGION}`, `${TF_STATE_BUCKET}`, `${EKS_CLUSTER_NAME}`, `${GITHUB_ACTIONS_ROLE}` and `${CLUSTER_SECRET_STORE_NAME}`.
-- Replace personal or private repository owners in public links with `YOUR_GITHUB_ORG` unless the repository owner is an intentional public project identity.
+- Replace personal or private repository owners in public links with `grayburnd` unless the repository owner is an intentional public project identity.
 - Replace credentials and password literals in examples with environment variables such as `${DB_PASSWORD}`. Local service names may remain only when clearly labelled as local-development defaults.
 - Generalize production cluster names, exact namespace inventories and other deployment identifiers unless they are explicitly presented as examples.
 - Use canonical repository URLs for cross-repository links in implementation READMEs so each public repository remains useful when cloned independently. Keep links to files within the same repository relative.

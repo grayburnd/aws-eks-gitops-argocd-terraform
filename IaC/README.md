@@ -4,7 +4,7 @@ This directory documents the Terraform infrastructure layer for the AWS EKS plat
 
 See the [root README](../README.md) for the platform architecture, prerequisites and repository-wide concerns.
 
-To go directly to the IaC repository, [click here](https://github.com/YOUR_GITHUB_ORG/aws)
+To go directly to the IaC repository, [click here](https://github.com/grayburnd/aws)
 
 ## Architecture Overview
 ```mermaid
