@@ -1,8 +1,14 @@
+## GitOps Deployment
+
+This directory documents the GitOps repositories that describe the workloads and platform components deployed to Amazon EKS. ArgoCD watches the GitOps source, while Helm charts, ApplicationSets and Kubernetes manifests define what is deployed.
+
+See the [root README](../README.md) for the platform architecture, prerequisites and repository-wide concerns.
+
 To go directly to each of the Teams GitOps repositories, click any of the links below:
-- [backend-gitops](https://github.com/grayburnd/backend-gitops)
-- [frontend-gitops](https://github.com/grayburnd/frontend-gitops)
-- [platform-gitops](https://github.com/grayburnd/platform-gitops)
-- [data-gitops](https://github.com/grayburnd/data-gitops)
+- [backend-gitops](https://github.com/YOUR_GITHUB_ORG/backend-gitops)
+- [frontend-gitops](https://github.com/YOUR_GITHUB_ORG/frontend-gitops)
+- [platform-gitops](https://github.com/YOUR_GITHUB_ORG/platform-gitops)
+- [data-gitops](https://github.com/YOUR_GITHUB_ORG/data-gitops)
 
 ## Architecture Overview
 ```mermaid
@@ -65,8 +71,8 @@ flowchart TB
     Approved -- Yes --> Merged["PR Merged<br>to Main"]
     Approved -- No --> Developer
     Merged -- Detect Changes --> ArgoCDController["ArgoCD Controller"]
-    ArgoCDController -- Apply --> CanaryDeploy["Blue/Green Deployment<br>New ReplicaSets"]
-    CanaryDeploy -- Manual Testing --> Testing["Testing Phase"]
+    ArgoCDController -- Apply --> BlueGreenDeploy["Blue/Green Deployment<br>New ReplicaSets"]
+    BlueGreenDeploy -- Manual Testing --> Testing["Testing Phase"]
     Testing -- Promote --> Production["Production Rollout"]
     AppSource["App Source Code Repo"] -- Push Release --> AppFeatureBranch["Feature Branch<br>App Repo"]
     AppFeatureBranch -- Update Docker Tags --> DockerUpdate["Docker Image Tag Update"]
@@ -80,7 +86,7 @@ flowchart TB
      KubeConform:::validation
      Merged:::success
      ArgoCDController:::deployment
-     CanaryDeploy:::deployment
+    BlueGreenDeploy:::deployment
      Production:::deployment
      AppSource:::developer
      AppFeatureBranch:::developer

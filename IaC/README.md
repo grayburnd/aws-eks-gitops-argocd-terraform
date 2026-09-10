@@ -1,4 +1,10 @@
-To go directly to the IaC repository, [click here](https://github.com/grayburnd/aws)
+## Infrastructure as Code
+
+This directory documents the Terraform infrastructure layer for the AWS EKS platform. The root module coordinates reusable modules for the cluster, networking, IP address management, IAM roles for service accounts, Karpenter and supporting storage resources.
+
+See the [root README](../README.md) for the platform architecture, prerequisites and repository-wide concerns.
+
+To go directly to the IaC repository, [click here](https://github.com/YOUR_GITHUB_ORG/aws)
 
 ## Architecture Overview
 ```mermaid

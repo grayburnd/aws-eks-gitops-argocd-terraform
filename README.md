@@ -1,6 +1,6 @@
 # AWS EKS GitOps Platform - Demonstration-Grade Kubernetes on AWS
 
-> **A fully automated, Kubernetes platform on AWS EKS** built with Terraform, ArgoCD, and GitHub Actions, demonstrating DevSecOps, GitOps, observability, and advanced deployment patterns
+> An automated Kubernetes platform on AWS EKS built with Terraform, ArgoCD and GitHub Actions, with manual approval for infrastructure changes and demonstrations of DevSecOps, GitOps, observability and advanced deployment patterns
 
 ![Terraform](https://img.shields.io/badge/Terraform-1.6%2B-%237B42BC?style=plastic&logo=terraform)
 ![K8s](https://img.shields.io/badge/Kubernetes-1.36%2B-%23326CE5?style=plastic&logo=kubernetes)
@@ -55,7 +55,7 @@ flowchart TB
         CICD_GITOPS
         CICD_IAC
   end
- subgraph SYS["Per Team Namespace (x5) (Karpenter-controlled)"]
+ subgraph SYS["Per Team Namespaces (Karpenter-controlled)"]
         ARGO["ArgoCD\nApp-of-Apps"]
         ESO["External Secrets Operator\n→ AWS Secrets Manager"]
         HPA["Horizontal Pod Autoscaler"]
@@ -99,21 +99,31 @@ flowchart TB
     IAC_B5 --> IAC_B6
 ```
 
+## Repository Layout
+
+| Directory | Purpose |
+|-----------|---------|
+| [`App/`](App/README.md) | Application development workflow, image delivery and promotion into GitOps |
+| [`GitOps/`](GitOps/README.md) | ArgoCD ApplicationSets, Helm charts and Kubernetes deployment workflow |
+| [`IaC/`](IaC/README.md) | Terraform modules and the infrastructure provisioning workflow |
+
 ### Key Design Decisions
 
 | Decision | Rationale |
 |----------|-----------|
-| **OIDC for GitHub Actions** | No long-lived AWS Credentials stored in GitHub |
+| **OIDC for GitHub Actions** | No long-lived AWS Credentials stored in GitHub. GitHub Actions assumes a scoped AWS IAM role through the GitHub OIDC identity provider |
+| **EKS Access policies** | Controls human and workload access to the EKS cluster through managed EKS access entries and policies, supporting centralized permissions and reducing reliance on broad node-level access |
+| **GitHub App for cross-repository access** | Provides ArgoCD with scoped access to private GitHub repositories through an App ID, installation ID and private key rather than using a personal access token |
 | **App-of-Apps ArgoCD Pattern** | Follows the Dont Repeat Yourself (DRY) method for managing ArgoCD Applications at scale |
 | **IRSA over node-level IAM** | Pod-scoped AWS permissions for least privilege per workload capabilities |
 | **Fargate to Manage Third-Party Controllers** | Prioritizes operational simplicity/efficiency whilst trading off Cost Optimization benefits |
 | **Karpenter over Cluster Autoscaler** | Provision diverse, optimal node configurations at scale whilst reaping cost optimization benefits through Kubernetes APIs |
 | **External Secrets Operator** | Centralized, Encrypted Secrets Management with AWS Secrets Manager |
 | **Redis Sentinel** | High Availability of the Redis Cluster to reduce downtime |
-| **Argo Rollouts (Canary)** | Zero-downtime deployments, allowing for manual testing pre-promotion, with instant rollback capability |
+| **Argo Rollouts (Blue/Green)** | Zero-downtime deployments, allowing for manual testing before promotion, with rollback capability |
 | **Fluent-Bit forwarded App Logs** | Log aggregation in CloudWatch, allowing for long-term observability investigations and custom alarming based on logs. |
 | **Databases managed by Operators** | Kubernetes native deployment, managed by Custom Operators to promote operational excellence |
-| **Namespace per Team** | Each team deploys K8s resources which they manage into their own namespace, bring operational efficiency, following multi-tenant best practices |
+| **Namespace per Team** | Each of the four teams deploys Kubernetes resources into its own namespace, following multi-tenant best practices |
 | **ArgoCD Project per Team** | Ensures secure multi-tenancy by isolating developer blast radiuses at both the GitOps deployment layer and the Kubernetes cluster runtime layer |
 | **Automated VPC IP Address management with VPC IPAM service** | Improves both operational efficiency and scalability of the Network, allowing for expansions into multiple VPC's in the future with full automation of the private Network Address Management layer |
 
@@ -124,16 +134,58 @@ flowchart TB
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| Terraform | >= 1.6 | Infrastructure provisioning |
+| Terraform | ~> 1.16.1 | Infrastructure provisioning |
 | AWS CLI | >= 2.x | AWS authentication |
 | kubectl | >= 1.36+ | Cluster management |
-| Helm | >= 4.2 | Chart deployments |
+| Helm | CI-installed version | Chart deployments and validation |
+
+### Parameter Store
+
+Create the following AWS Systems Manager Parameter Store entries before deploying workloads. External Secrets Operator reads these values through IRSA and materializes them as Kubernetes Secrets for the application pods.
+
+`redis-connection`:
+
+```json
+{
+        "REDIS_SENTINEL_HOST": "${REDIS_SENTINEL_HOST}",
+        "REDIS_MASTER_NAME": "mymaster",
+        "REDIS_SENTINEL_PORT": "26379",
+        "REDIS_USER_NAME": "default"
+}
+```
+
+`postgres-connection`:
+
+```json
+{
+        "DB_HOST": "${POSTGRES_HOST}",
+        "DB_SSL_MODE": "require",
+        "DB": "postgres"
+}
+```
+
+`${REDIS_SENTINEL_HOST}` and `${POSTGRES_HOST}` represent the service DNS names for the deployed Redis and Postgres services. Notably, `${POSTGRES_HOST}` is made up of the `<postgres-service-name>.<namespace>` i.e `postgres.data-prod`. `${REDIS_SENTINEL_HOST}` is the name of the Sentinel headless service (as this fronts the Redis Cluster) followed by the namespace i.e `redis-s-hl.data-prod`. See the following links for more info:
+- https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/
+- https://redis-operator.opstree.dev/docs/
+
+Do not commit connection values or credentials to Git!
+
+### AWS and GitHub Access
+
+The following access configuration is required before running the platform workflows:
+
+- A GitHub OIDC identity provider in AWS.
+- A scoped IAM trust policy and IAM role, represented by `${GITHUB_ACTIONS_ROLE}`, for GitHub Actions to obtain temporary AWS credentials. See the [AWS GitHub Actions OIDC guidance](https://aws.amazon.com/blogs/security/use-iam-roles-to-connect-github-actions-to-actions-in-aws/).
+- EKS access entries and policies for the identities that need cluster access.
+- A GitHub App installed for the repositories ArgoCD must read, with at least read-only Contents permission. ArgoCD uses this credential to authenticate to private GitHub repositories. See the [ArgoCD private repository documentation](https://argo-cd.readthedocs.io/en/stable/user-guide/private-repositories/).
+
+The OIDC role authenticates CI/CD workflows to AWS, EKS access policies authorize cluster access and the GitHub App allows ArgoCD to pull private GitOps repositories.
 
 ---
 
-## DevSecOps: Security Controls
+## DevSecOps
 
-### Secret Management (External Secrets Operator)
+### Secret Management
 
 ```
 AWS Secrets Manager / SSM Parameter Store (source of truth)
@@ -150,7 +202,20 @@ AWS Secrets Manager / SSM Parameter Store (source of truth)
           ▼
   Pod environment variable / mounted volume
 ```
+### Analysis
+```
+  Static application security testing (Bandit)
+          │
+          ▼
+  Software composition analysis (Trivy)
+          │
+          ▼
+  IaC security scanning (Checkov)
+          │
+          ▼
+  Dockerfile scanning (hadolint)
 
+```
 ---
 
 ## Observability Stack
@@ -163,15 +228,31 @@ AWS Secrets Manager / SSM Parameter Store (source of truth)
 
 ---
 
-## Canary Deployments (Argo Rollouts)
+## Blue/Green Deployments (Argo Rollouts)
 
-The Demo App uses Argo Rollouts for zero-downtime canary deployments
+The frontend applications use Argo Rollouts for zero-downtime blue/green deployments. Their preview services support validation before promotion and automatic promotion is disabled, so promotion happens after manual testing.
 
 ---
 
-## Infrastructure Costs (Estimated) [W.I.P]
+## Infrastructure Costs (Estimated)
 
-> For cost savings during development, use `single_nat_gateway = true` in terraform.tfvars. [W.I.P]
+> Example region: `${AWS_REGION}`. Figures marked **Grounded** are derived directly from the Terraform in the infrastructure repository. Figures marked **Assumption** cover usage or runtime consumption that is not fixed by repository configuration. Karpenter capacity settings and per-app Helm resource values are defined in the GitOps repositories, while actual monthly usage depends on workload demand.
+
+| Item | Basis | Est. $/month |
+|------|-------|---------------|
+| EKS control plane | Grounded - fixed AWS price ($0.10/hr) | ~$73 |
+| NAT Gateway (single AZ) | Grounded - one `aws_nat_gateway`, cost-optimized deliberately | ~$38 |
+| Fargate (kube-system controllers: LBC, redis-operator, postgres-operator, ESO, kube-prometheus-stack, metrics-server, VPA, Karpenter, CoreDNS, VPC-CNI, EBS-CSI, CloudWatch add-on) | Assumption - ~10 pods avg 0.25 vCPU/0.5GB, 24/7 | ~$90–120 |
+| Karpenter-managed EC2 nodes (4 team namespaces) | Assumption - Spot capacity selected by the platform Karpenter configuration at ~60–70% off on-demand | ~$45–90 |
+| EBS volumes (Postgres/Redis via operators) | Assumption - 2–3 × 20GB gp3 | ~$5–8 |
+| CloudWatch Logs (control-plane logging, all 5 log types + Fluent Bit app logs + Container Insights) | Assumption - 5–10GB ingested/month | ~$5–10 |
+| KMS CMK (K8s secrets encryption) | Grounded - 1 dedicated key | ~$1 |
+| S3 (Postgres log archive, 30-day expiry) | Grounded - 1 bucket, small footprint | <$1 |
+| Secrets Manager (via ESO) | Assumption - ~8 secrets × $0.40 | ~$3 |
+| ALB (via AWS Load Balancer Controller) | Assumption - 1 ALB | ~$16 |
+| **Total (rough range)** | | **~$275–360/month** |
+
+> For cost savings during development, use a single NAT gateway (already the default here) and consider scaling down Karpenter-managed nodes and Fargate profile replicas outside of demo hours.
 
 ---
 
@@ -180,10 +261,10 @@ The Demo App uses Argo Rollouts for zero-downtime canary deployments
 | Category | Technology |
 |----------|-----------|
 | Cloud | AWS (EKS, ECR, VPC, EC2, IAM, Secrets Manager, SSM) |
-| IaC | Terraform 1.6+, CloudFormation |
+| IaC | Terraform ~> 1.16.1, CloudFormation |
 | Containers | Docker, AWS ECR |
 | Orchestration | Kubernetes 1.36+, Helm 4 |
-| GitOps | ArgoCD 3.5+ (App-of-Apps), Argo Rollouts (ArgoCD Extension) |
+| GitOps | ArgoCD 3.5+ (App-of-Apps), Helm 4+, Argo Rollouts (ArgoCD Extension) |
 | CI/CD | GitHub Actions (OIDC auth) |
 | Security Scanning | Trivy (Docker Image), GitLeaks, Hadolint (Dockerfile), Checkov (IaC)  |
 | Network Security | AWS Security Groups |
@@ -199,6 +280,9 @@ The Demo App uses Argo Rollouts for zero-downtime canary deployments
 
 | Category | Improvement | Rationale |
 |----------|-------------|-----------|
+| Security | Scope all IAM Roles to least-privellege | Strengthens principle of least privellege positioning thus improving security
+| Security | Implement a WAF, with extensive layer 7 attack protections such as AWS WAF in combination with AWS Shield | Promotes a defence-in-depth approach by protecting the outer perimiter of the AWS Network
+| Performance efficiency / Security / Reliability | Front any cached content with CloudFront | Reduces load on backend, utilizing caches closer to the end user for layered well architected benefits.
 | Operational excellence | Deploy Kyverno into Cluster | Facilitates Governance at scale across the entire Cluster through Guardrails
 | Security | Remove public endpoint access to the Cluster | Promotes defence in depth by ensuring the Cluster can only be accessed when connected to the hosting VPC privately
 | Security | Implement network policies | Enforces network segregation, following network layer zero trust best practices
@@ -206,9 +290,7 @@ The Demo App uses Argo Rollouts for zero-downtime canary deployments
 | Reliability | Scale out all infra to multiple Availability Zones | Improves the availability of the application, making it resistent to disasters
 | Operational excellence | Implement alerting for key app SLOs | Helps align resource focus to key SLI's, such as P99 Latency and detect issues before they occur
 
-## Author
-
-Built as a production-grade DevOps portfolio project demonstrating:
+## Author [WIP]
 - Cloud-native infrastructure design (AWS EKS)
 - GitOps methodology at scale (ArgoCD App-of-Apps)
 - DevSecOps pipeline with shift-left security (Trivy, Checkov, Hadolint)
