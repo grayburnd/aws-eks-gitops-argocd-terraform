@@ -182,7 +182,173 @@ The following access configuration is required before running the platform workf
 The OIDC role authenticates CI/CD workflows to AWS, EKS access policies authorize cluster access and the GitHub App allows ArgoCD to pull private GitOps repositories.
 
 ---
+## Quick Start
 
+### 1. Provision the infrastructure
+
+Navigate to the [IaC repository](https://github.com/grayburnd/aws) and configure the Terraform S3 backend and production environment values required by its workflow. The pull-request workflow validates the configuration and creates a reviewed Terraform plan. After the pull request is merged into `main`, the CD workflow applies that exact plan to provision the AWS infrastructure and EKS cluster.
+
+The infrastructure workflow uses GitHub OIDC to assume the configured AWS IAM role. Confirm that the AWS account, GitHub environment variables, remote state and EKS access configuration are ready before opening the pull request.
+
+### 2. Connect to the cluster
+
+Terraform updates kubeconfig during provisioning. You can also run the command locally to select the cluster context:
+
+```bash
+aws eks --region ${AWS_REGION} update-kubeconfig --name ${EKS_CLUSTER_NAME}
+kubectl get nodes
+```
+
+ArgoCD is installed in the `kube-system` namespace. Verify that you can reach the cluster before continuing:
+
+```bash
+kubectl cluster-info
+kubectl get pods -n kube-system
+```
+
+### 3. Access ArgoCD
+
+Retrieve the initial ArgoCD administrator password and keep it available for the login step:
+
+```bash
+kubectl get secret -n kube-system argocd-initial-admin-secret \
+        -o jsonpath='{.data.password}' | base64 --decode
+```
+
+In a separate terminal, forward the ArgoCD server service to your machine:
+
+```bash
+kubectl port-forward -n kube-system svc/argocd-server 8080:443
+```
+
+Open <https://localhost:8080> and sign in with username `admin` and the password retrieved above. The local port-forward uses the ArgoCD server's TLS service port; the public application Gateway described below is intentionally HTTP-only for this demonstration.
+
+### 4. Bootstrap the GitOps repositories
+
+Each GitOps repository contains its own ApplicationSets. Clone each repository locally and apply its ApplicationSet manifests manually. These ApplicationSets are parent resources, not the final workload Applications: once an ApplicationSet exists, ArgoCD processes its Git generator, creates the downstream Applications it describes, and then syncs and reconciles the referenced repository.
+
+Apply the repositories in this order because each stage provides dependencies for the next one:
+
+#### 4.1 Platform: shared cluster resources
+
+The [platform GitOps repository](https://github.com/grayburnd/platform-gitops) bootstraps shared cluster services, including CustomResourceDefinitions, controllers, operators, ArgoCD Projects, networking and observability. Its generated resources target `kube-system` and `platform-prod`.
+
+From a local clone of `platform-gitops`, apply the Projects and locally managed GitHub App repository credential first, followed by the platform ApplicationSets:
+
+```bash
+kubectl apply -f projects/
+kubectl apply -f github_app_secret.yml
+
+# CRDs, then controllers/operators, then platform bootstrap and applications.
+kubectl apply -f appsets/prod-appset-crds.yml
+kubectl apply -f appsets/prod-appset-controllers.yml
+kubectl apply -f appsets/prod-appset-bootstrap.yml
+kubectl apply -f appsets/prod-appset.yml
+```
+
+The platform ApplicationSets are classified as follows:
+
+| ApplicationSet | Type and purpose | Destination |
+|----------------|------------------|-------------|
+| `prod-appset-crds.yml` | CRD ApplicationSet: installs third-party CustomResourceDefinitions | `kube-system` |
+| `prod-appset-controllers.yml` | Controller/operator ApplicationSet: installs shared controllers and operators | `kube-system` |
+| `prod-appset-bootstrap.yml` | Bootstrap ApplicationSet: installs platform bootstrap services | `platform-prod` |
+| `prod-appset.yml` | Platform application ApplicationSet: installs platform applications such as networking | `platform-prod` |
+
+The GitHub App Secret is intentionally ignored by Git in the platform repository. Create it from your secure local secret source, and do not commit private keys or credentials.
+
+#### 4.2 Data: PostgreSQL and Redis
+
+After the platform dependencies are available, clone the [data GitOps repository](https://github.com/grayburnd/data-gitops). Its ApplicationSets deploy PostgreSQL and the Redis dependencies into `data-prod`. Apply the bootstrap resources first, then third-party applications such as Redis, and finally the data application charts:
+
+```bash
+kubectl apply -f appsets/prod-appset-bootstrap.yml
+kubectl apply -f appsets/prod-appset-thirdparty.yml
+kubectl apply -f appsets/prod-appset.yml
+```
+
+The data repository uses three ApplicationSet types: a bootstrap ApplicationSet for data-specific supporting resources, a third-party ApplicationSet for external Helm dependencies, and an application ApplicationSet for charts under `apps/*`.
+
+#### 4.3 Backend: voting worker
+
+After PostgreSQL and Redis are available, clone the [backend GitOps repository](https://github.com/grayburnd/backend-gitops). Its bootstrap ApplicationSet creates backend supporting resources, and its application ApplicationSet deploys the internal voting worker into `backend-prod`:
+
+```bash
+kubectl apply -f appsets/prod-appset-bootstrap.yml
+kubectl apply -f appsets/prod-appset.yml
+```
+
+#### 4.4 Frontend: vote and results applications
+
+After the worker and its data dependencies are available, clone the [frontend GitOps repository](https://github.com/grayburnd/frontend-gitops). Its bootstrap ApplicationSet creates frontend supporting resources, and its application ApplicationSet deploys the voting and results applications into `frontend-prod`:
+
+```bash
+kubectl apply -f appsets/prod-appset-bootstrap.yml
+kubectl apply -f appsets/prod-appset.yml
+```
+
+The generated frontend Applications also create the HTTPRoutes used by the public Gateway.
+
+#### Multi-source values
+
+The team ApplicationSets use ArgoCD multi-source Applications. Chart or configuration content is read from the relevant team repository, while Helm values are referenced from the private `private-gitops-values` repository through `$values/...` paths. Example values files may be visible alongside the charts for documentation and validation, but production values remain in the private repository. When all repositories are private, storing the chart and environment values in the same repository can be operationally simpler; multi-source Applications remain useful when public chart configuration and private environment values need to be separated.
+
+Wait for each dependency to become available before troubleshooting the next generated Application. For example, a ServiceMonitor may remain unhealthy until the kube-prometheus-stack CRDs and controller are ready. In that situation, wait for the dependency, then retry or reconcile the failed ArgoCD Application rather than deleting resources immediately.
+
+### 5. Deploy the team workloads
+
+After the repository ApplicationSets have been applied manually in the order above, their downstream Applications generate from the team repositories and ArgoCD watches and reconciles their Helm charts. The team workloads are not deployed by manually applying workload manifests from this repository. The production workload namespaces are:
+
+| Repository | Namespace | Workloads |
+|------------|-----------|-----------|
+| [backend-gitops](https://github.com/grayburnd/backend-gitops) | `backend-prod` | Voting worker |
+| [data-gitops](https://github.com/grayburnd/data-gitops) | `data-prod` | PostgreSQL and Redis dependencies |
+| [frontend-gitops](https://github.com/grayburnd/frontend-gitops) | `frontend-prod` | Voting and results applications |
+
+Before the workloads can become healthy, create the `redis-connection` and `postgres-connection` AWS Systems Manager Parameter Store values described in [Parameter Store](#parameter-store). Set their service DNS values after the data services have been deployed: typically `redis-s-hl.data-prod` for Redis Sentinel and `postgres.data-prod` for PostgreSQL. External Secrets Operator reads these values through IRSA and materializes Kubernetes Secrets for the application pods.
+
+After the platform bootstrap is ready, merge the required workload changes into the respective GitOps repositories and allow ArgoCD to reconcile them. You can monitor the generated Applications with:
+
+```bash
+kubectl get applications -A
+kubectl get pods -A
+```
+
+### 6. Access the applications
+
+The platform networking application creates the internet-facing `pub-gateway` Gateway in the `platform-prod` namespace. Wait for the AWS Load Balancer Controller to provision its address, then retrieve it with:
+
+```bash
+GATEWAY_ADDRESS=$(kubectl get gateway pub-gateway -n platform-prod \
+        -o jsonpath='{.status.addresses[0].value}')
+echo "http://${GATEWAY_ADDRESS}"
+```
+
+Open the following routes in a browser:
+
+- Voting: `http://${GATEWAY_ADDRESS}/vote`
+- Results: `http://${GATEWAY_ADDRESS}/results`
+
+The public Gateway intentionally uses HTTP without TLS termination or a configured domain name because this is a demonstration-grade deployment. A production deployment should add an appropriate Gateway listener, certificate and AWS networking configuration.
+
+### 7. Logs and progressive delivery
+
+To inspect a container's logs, first identify the pod and container, then run:
+
+```bash
+kubectl get pods -n <namespace>
+kubectl logs -n <namespace> <pod-name> -c <container-name>
+```
+
+The frontend voting and results applications use Argo Rollouts blue/green deployments. New ReplicaSets are sent to preview services and are not promoted automatically because `autoPromotionEnabled` is `false`. Test the preview version, then promote it through the ArgoCD Rollouts extension or the Argo Rollouts CLI. Using the CLI is outside the scope of this demonstration; see the [ArgoCD Rollouts extension documentation](https://argo-cd.readthedocs.io/en/stable/proposals/002-ui-extensions/#argo-rollout-extension-poc) for the UI workflow.
+
+The worker, voting and results applications may therefore remain paused until their new versions are promoted. If an Application fails because a required CRD or controller is not ready, wait for the dependency to become healthy and then retry or reconcile the affected Application.
+
+
+
+
+
+---
 ## DevSecOps
 
 ### Secret Management
@@ -243,7 +409,7 @@ The frontend applications use Argo Rollouts for zero-downtime blue/green deploym
 | EKS control plane | Grounded - fixed AWS price ($0.10/hr) | ~$73 |
 | NAT Gateway (single AZ) | Grounded - one `aws_nat_gateway`, cost-optimized deliberately | ~$38 |
 | Fargate (kube-system controllers: LBC, redis-operator, postgres-operator, ESO, kube-prometheus-stack, metrics-server, VPA, Karpenter, CoreDNS, VPC-CNI, EBS-CSI, CloudWatch add-on) | Assumption - ~10 pods avg 0.25 vCPU/0.5GB, 24/7 | ~$90–120 |
-| Karpenter-managed EC2 nodes (4 team namespaces) | Assumption - Spot capacity selected by the platform Karpenter configuration at ~60–70% off on-demand | ~$45–90 |
+| Karpenter-managed EC2 nodes (5 team namespaces) | Assumption - Spot capacity selected by the platform Karpenter configuration at ~60–70% off on-demand | ~$45–90 |
 | EBS volumes (Postgres/Redis via operators) | Assumption - 2–3 × 20GB gp3 | ~$5–8 |
 | CloudWatch Logs (control-plane logging, all 5 log types + Fluent Bit app logs + Container Insights) | Assumption - 5–10GB ingested/month | ~$5–10 |
 | KMS CMK (K8s secrets encryption) | Grounded - 1 dedicated key | ~$1 |
@@ -289,10 +455,10 @@ The frontend applications use Argo Rollouts for zero-downtime blue/green deploym
 | Operational excellence | Migrate Redis and Postgres to AWS-Managed Services | Reduces the operational footprint of maintaing DB Services
 | Reliability | Scale out all infra to multiple Availability Zones | Improves the availability of the application, making it resistent to disasters
 | Operational excellence | Implement alerting for key app SLOs | Helps align resource focus to key SLI's, such as P99 Latency and detect issues before they occur
+| Security | Configure RBAC in ArgoCD for each team member | Follows the principle of least privellege access within ArgoCD
 
-## Author [WIP]
+## Author: Daniel Grayburn
 - Cloud-native infrastructure design (AWS EKS)
 - GitOps methodology at scale (ArgoCD App-of-Apps)
 - DevSecOps pipeline with shift-left security (Trivy, Checkov, Hadolint)
 - Zero-downtime deployment strategies (Argo Rollouts)
-- Day-2 operations readiness (observability, runbooks, HPA)
