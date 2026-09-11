@@ -111,6 +111,7 @@ flowchart TB
 
 | Decision | Rationale |
 |----------|-----------|
+| **Parameter files over branches for deploying to different GitOps environments** | Reduces chance of environment configuration drift, resulting in an increase in deployment velocity and reliability, following Kuberenetes GitOps best practices, using tools such as Helm and Terraform at their best |
 | **OIDC for GitHub Actions** | No long-lived AWS Credentials stored in GitHub. GitHub Actions assumes a scoped AWS IAM role through the GitHub OIDC identity provider |
 | **EKS Access policies** | Controls human and workload access to the EKS cluster through managed EKS access entries and policies, supporting centralized permissions and reducing reliance on broad node-level access |
 | **GitHub App for cross-repository access** | Provides ArgoCD with scoped access to private GitHub repositories through an App ID, installation ID and private key rather than using a personal access token |
